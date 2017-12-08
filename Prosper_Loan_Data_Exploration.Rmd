@@ -1,0 +1,894 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+An Exploration of Loan Data from Prosper by Suzannah Weinfass
+=============================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(maps)
+library(scales)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Load the Data
+LoanData <- read_csv('prosperLoanData.csv')
+```
+
+The data explored in this report was provided by Prosper and contains
+information on 133,937 loans (data last updated 03/11/2014). The data set
+contains 81 variables on each loan, including loan amount, borrower rate (or
+interest rate), current loan status, borrower income, borrower employment
+status, borrower credit history, and the latest payment information.
+
+# Univariate Plots Section
+
+A preliminary univariate exploration of the data was completed in order to gain
+an initial understanding of the individual variables within the dataset.
+
+The variables comprise of a number of different data types, including
+continuous, discrete numeric values, discrete character values and some datetime
+values. Summaries of the variables explored in this report are shown below.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, Summary}
+VariablesUsed = subset(LoanData, 
+                       select = c(ListingCreationDate, Term, LoanStatus, 
+                                  BorrowerAPR, `ProsperRating (numeric)`,
+                                  ProsperScore, `ListingCategory (numeric)`, 
+                                  BorrowerState, Occupation, EmploymentStatus,
+                                  EmploymentStatusDuration, 
+                                  CreditScoreRangeLower, CreditScoreRangeUpper,
+                                  AmountDelinquent, BankcardUtilization, 
+                                  DebtToIncomeRatio, TotalProsperLoans,
+                                  OpenRevolvingMonthlyPayment,
+                                  ProsperPrincipalBorrowed,
+                                  ProsperPrincipalOutstanding, 
+                                  LoanOriginalAmount, MonthlyLoanPayment,
+                                  Investors, BorrowerState))
+summary(VariablesUsed)
+```
+
+For loans in which the variable 'LoanStatus' is 'PastDue', the 'PastDue' status
+is accompanied by a delinquency bucket indicating how late the payment is. In
+order to investigate this variable further, this variable was split into two
+variables, a 'LoanStatus' variable and a new variable, 'PastDueBucket', which
+contained the delinquency bucket for 'PastDue' loans. In a similar way,
+'ListingCreationDate' was split into two variables, 'CreationDate' and
+'CreationTime'. 'CreationDate' was then converted in POSIXct format. These
+transformations were completed using the code below.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, Cleaning_Data}
+LoanDataClean <- separate(LoanData, LoanStatus,
+                          into = c("LoanStatus", "PastDueBucket"),
+                          sep = "[()]", extra = "drop")
+
+LoanDataClean <- separate(LoanDataClean, ListingCreationDate,
+                          into = c("CreationDate", "CreationTime"),
+                          sep = " ", extra = "drop")
+
+LoanDataClean$CreationDate <- as.POSIXct(LoanDataClean$CreationDate,
+                                             format = "%Y-%m-%d")
+```
+
+### Exploring the Loans
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanStatus}
+ggplot(data=LoanDataClean, aes(x=LoanStatus))+
+  geom_bar()+
+  scale_x_discrete(labels = c("Cancelled", "Chargedoff", "Completed", 
+                              "Current", "Defaulted", 
+                              "Final Payment \nin Progress", "Past Due"))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, PastDueBucket}
+ggplot(data=subset(LoanDataClean, !is.na(PastDueBucket)),aes(x=PastDueBucket))+
+  geom_bar()
+```
+
+The majority of loans are of either current or completed status. Of those loans
+that are Past Due, a large proportion of them fall within the 1-15 days bucket, 
+indicating that many late payments are made within about two weeks of the due
+date. 
+
+Using the factor function the numeric values for the variable 'ListingCategory
+(numeric)' were substituted for their corresponding categories, and a new
+variable 'ListingCategory' was created.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, ListingCategory}
+LoanDataClean$ListingCategory <-
+  factor(LoanDataClean$`ListingCategory (numeric)`,
+levels = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+           18, 19, 20),
+labels = c("Not Available", "Debt Consolidation", "Home Improvement",
+            "Business", "Personal Loan", "Student Use", "Auto", 
+            "Other", "Baby&Adoption", "Boat", "Cosmetic Procedure", 
+            "Engagement Ring", "Green Loans", "Household Expenses",
+            "Large Purchases", "Medical/Dental", "Motorcycle", "RV",
+            "Taxes", "Vacation", "Wedding Loans"))
+
+ggplot(data=LoanDataClean, aes(x=ListingCategory))+
+  geom_bar()+
+  theme(axis.text.x=element_text(angle=90,hjust=1, vjust=0.5))
+```
+
+As seen from the graph above, the majority of loans in this dataset were taken 
+in an attempt to consolidate other debt.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperRating}
+ggplot(data=(subset(LoanDataClean, !is.na(`ProsperRating (numeric)`))),
+       aes(x=`ProsperRating (numeric)`))+
+  geom_bar()
+```
+
+The graphic above displays a relatively normal distribution of Prosper ratings
+given to the loans in this dataset, with possibly a small bias towards less 
+risky loans (indicated by a higher Prosper rating). This distribution is
+indicative of the business management undertaken by Prosper to manage the risk
+of the loans on their accounts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperScore}
+ggplot(data=(subset(LoanDataClean, !is.na(ProsperScore))), aes(x=ProsperScore))+
+  geom_bar()
+```
+
+Similarly, this graphic shows a normal distribution trend for the Prosper Score
+values.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, Investors}
+n1 <- ggplot(data=LoanDataClean, aes(x=Investors))+
+  geom_histogram(binwidth=5)
+
+n2 <- ggplot(data=(subset(LoanDataClean, Investors >= 5)),
+             aes(x=Investors))+
+  geom_histogram(binwidth=5)
+
+grid.arrange(n1, n2, ncol=1)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, InvestorsSummary}
+summary(LoanDataClean$Investors)
+```
+
+Although there was a loan with 1189 investors, the majority of loans had much 
+fewer than that, with the 3rd quartile sitting at 115 investors. From the top 
+graph of the panel, it can be seen that the majority of loans had between 0 and 
+4 investors.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanOriginalAmount}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount))+
+  geom_histogram(binwidth=500)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanOriginalAmountSummary}
+summary(LoanDataClean$LoanOriginalAmount)
+```
+
+The minimum loan taken out was \$1000 and the maximum \$35000. The data is
+positively skewed with loan values of \$4000, \$10000, \$15000, \$20000 and
+\$25000 showing exceptionly high count values (and to a lesser extent \$1000, 
+\$2000, \$3000 and $5000), indicating that most loans are rounded to the nearest
+\$1000, and for loans of $10000 and above, to the nearest \$5000.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperPrincipalBorrowed}
+ggplot(data=LoanDataClean, aes(x=ProsperPrincipalBorrowed))+
+  geom_histogram(binwidth=500)
+```
+
+A histogram of the variable 'ProsperPrincipalBorrowed' shows similar features to
+that of 'LoanOriginalAmount'.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, MonthlyLoanPayment}
+ggplot(data=LoanDataClean, aes(x=MonthlyLoanPayment))+
+  geom_histogram(binwidth=10)+
+  scale_x_continuous(breaks = seq(0,1400,200), lim = c(0,1400))
+```
+
+The 'MonthlyLoanPayment' data is positively skewed with a slightly multimodal
+distribution, possibly a reflection of the nature of borrowers to take out loans
+that are multiples of $5000. The monthly payments should reflect the original 
+loan amount, however there seems to be some distribution of data around the 
+modes, indicating that there are other variables that also affect the monthly 
+payment amount. An expection to this is the large peak seen at around \$170. 
+Maybe this is an introductory rate or other special deal?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperPrincipalOutstanding}
+p1 <- ggplot(data=LoanDataClean, aes(x=ProsperPrincipalOutstanding))+
+  geom_histogram(binwidth=100)
+
+p2 <- ggplot(data=(subset(LoanDataClean, ProsperPrincipalOutstanding >= 1)),
+             aes(x=ProsperPrincipalOutstanding))+
+  geom_histogram(binwidth=100)
+
+grid.arrange(p1, p2, ncol=1)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperPrincipalOutstandingSummary}
+summary(LoanDataClean$ProsperPrincipalOutstanding)
+```
+
+The dataset contains a variable called 'ProsperPrincipleOutstanding' which
+indicates the amount outstanding in Prosper loans that the borrower already had
+when taking out the Prosper loan listed. In the summary table above, a null
+value (indictive of the borrower having no prior loans) occured 91852 times, 
+accounting for 81% of cases. Plotting the remaining data for this variable 
+shows that in the vast majority of cases the borrower had paid off all prior 
+loans. Subsetting this data to only include data in which
+`ProsperPrincipalOutstanding >= 1` enables the distribution of the data for this
+variable to be more clearly seen. 
+
+The data is positively skewed with the median value falling at \$1626 and the
+3rd quartile value falling at \$4127, compared to a maximum value of \$23451.
+High count peaks occur around \$900, \$1700, \$3300, \$4100 and \$6200. This is 
+most likely an artifact of the high frequency of certain original loan amounts 
+(see above), possibly combined with another variable.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Term_BorrowerAPR_CreationDate}
+q1 <- ggplot(data=LoanDataClean, aes(x=Term))+
+  geom_histogram(binwidth=1)
+
+q2 <- ggplot(data=(LoanDataClean), aes(x=BorrowerAPR))+
+  geom_histogram(binwidth=0.01)
+
+q3 <- ggplot(data=(LoanDataClean), aes(x=CreationDate))+
+  geom_histogram()
+
+grid.arrange(q1, q2, q3, ncol=1)
+```
+
+It seems that there are 3 different term lengths offered by Prosper, of 12, 36 
+and 60 months. Borrower APR rates seem to have a relatively normal distribution.
+It seems the rate of loan creation has increased markedly from 2013 onwards, 
+whilst there was a period in 2009 where no loans were created at all, most 
+likely a side-effect of the financial crash which occured in 2008.
+
+### Investigating the Borrower
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, BorrowerState}
+ggplot(data=LoanDataClean, aes(x=BorrowerState))+
+  geom_bar()+
+  theme(axis.text.x=element_text(angle=90,hjust=1, vjust = 0.5))
+```
+
+It is clear that some states, California in particular, account for far more of 
+the borrowers than others.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmploymentStatus}
+ggplot(data=LoanDataClean, aes(x=EmploymentStatus))+
+  geom_bar()+
+  scale_x_discrete(labels = c("Employed", "Full-time", "Not \navailable", 
+                              "Not \nemployed", "Other", "Part-time", "Retired",
+                              "Self-employed", "NA"))
+```
+
+This data implies that that most borrowers are employed. Further bar charts were
+created to look at the distribution of occupations that the borrowers listed 
+when taking out the loans.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Occupation}
+ggplot(data=LoanDataClean, aes(x=Occupation))+
+  geom_bar()+
+  theme(axis.text.x=element_text(angle=90,hjust=1, vjust=0.5))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, OccupationLogScale}
+ggplot(data=LoanDataClean, aes(x=Occupation))+
+  geom_bar()+
+  scale_y_log10()+
+  theme(axis.text.x=element_text(angle=90,hjust=1, vjust=0.5))
+```
+
+Those who list their occupation as 'Other' or 'Professional' account for the 
+vast majority of borrowers in this dataset.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, BCreditScoreRangeMean}
+LoanDataClean$CreditScoreRangeMean <- (LoanDataClean$CreditScoreRangeUpper +
+                                         LoanDataClean$CreditScoreRangeLower)/2
+
+ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean))+
+  geom_histogram(binwidth=20)+
+  scale_x_continuous(breaks = seq(350,950,50), lim = c(350,950))
+```
+
+Credit score has a relatively normal distribution. I was interested in seeing if 
+other variables that reflect spending and borrowing traits have a similar trend.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Spending_Borrowing_Traits}
+r1 <- ggplot(data=subset(LoanDataClean, AmountDelinquent != 0),
+             aes(x=AmountDelinquent))+
+  geom_histogram(binwidth = 100)+
+  scale_x_continuous(breaks = seq(0,6000,1000), lim = c(0,6000))
+
+r2 <- ggplot(data=(LoanDataClean), aes(x=DebtToIncomeRatio))+
+  geom_histogram(binwidth = 0.1)+
+  scale_x_continuous(breaks = seq(0,2,0.2), lim = c(0,2))
+
+r3 <- ggplot(data=(LoanDataClean), aes(x=OpenRevolvingMonthlyPayment))+
+  geom_histogram(binwidth=50)+
+  scale_x_continuous(breaks = seq(0,2500,500), lim = c(0,2500))
+
+r4 <- ggplot(data=(LoanDataClean), aes(x=TotalProsperLoans))+
+  geom_histogram(binwidth=1)+
+  scale_x_continuous(breaks = seq(0,6,1), lim = c(0,6))
+
+r5 <- ggplot(data=(LoanDataClean), aes(x=BankcardUtilization))+
+  geom_histogram(binwidth=0.01)+
+  scale_x_continuous(breaks = seq(0,1,0.1), lim = c(0,1))+
+  scale_y_continuous(breaks = seq(0,2500,1000), lim = c(0,2500))
+
+grid.arrange(r1, r2, r3, r4, r5, ncol=1)
+```
+
+These plots show various trends. The variables 'AmountDelinquent', 
+'DebtToIncomeRatio' and 'OpenRevolvingMonthlyPayment'all show positively skewed 
+data with the frequency of all variables decreasing as the value increases. The
+majority of borrowers had no other Prosper loans at the time the listing was 
+created but of those that did, most had only 1 other Prosper loan. Finally, the
+'BankcardUtilization' count steadily increases with increasing utilization. The
+summary data for this variable is below: 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, BankcardUtilizationSummary}
+summary(LoanDataClean$BankcardUtilization)
+```
+
+The median 'BankcardUtilization' value of 0.600 indicates that over half of the
+borrowers had utilized over half of their available credit when taking out the 
+loan. In fact 25% of borrowers had over 84 % bank card credit utilization. As a 
+note, the maximum value given in the summary table must be anomalous as only 
+values between 0 and 1 are valid.
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 113937 loans with 81 variables on each loan. These variables include 
+those related to the loan in question, for example original loan amount, loan 
+status, Prosper rating and listing category, as well as those related to the
+borrower, such as borrower state, employment status and occupation.
+
+Most of the loans listed are either current or completed, and the majority of 
+loans were taken out for debt consolidation. The loans amounts often take common
+values, rounded to the nearest \$1000, or for loans above \$10000, rounded to
+the nearest \$5000. The distribution of the original loan amounts in this 
+dataset are highly positively skewed, with the median original loan amount value
+being \$6500 whilst the maximum value is \$35000.
+
+Most of the borrowers listed in this dataset are employed and list 'Other' or
+'Professional' as their occupation.
+
+### What is/are the main feature(s) of interest in your dataset?
+There are many features in this dataset, however, ones that I am particularly
+interested in include original loan amount, Prosper rating and Prosper score. I 
+would like to know if there is any correlation between these variables, and
+possibly other variables within the dataset. 
+
+### What other features in the dataset do you think will help support your \ investigation into your feature(s) of interest?
+Other than the variables highlighted above, I would also like to investigate if
+there is any relationship between credit score, income to debt ratio, Prosper
+principle borrowed and monthly loan payments.
+
+### Did you create any new variables from existing variables in the dataset?
+I used the separate function from the tidyr library to split the 'LoanStatus'
+variable into a 'LoanStatus' variable and a new variable, 'PastDueBucket', which
+contained the delinquency bucket for 'PastDue' loans. This enabled the length of
+time loans had been 'PastDue' to be investigated. The separate function was also
+used to split the 'ListingCreationDate' variable into the 'CreationDate' and
+'CreationTime' variables. The 'CreationDate' variable was then converted to 
+POSTXct format.
+
+A new variable 'ListingCategory' was created by using the factor function to
+exchange the numeric values in the variable 'ListingCategory (numeric)' for 
+their corresponding categories.
+
+Lastly, a new variable 'CreditScoreRangeMean' was created using the mean value 
+found from the values of the 'CreditScoreRangeUpper' and 'CreditScoreRangeLower'
+variables.
+
+###Of the features you investigated, were there any unusual distributions? Did \ you perform any operations on the data to tidy, adjust, or change the form of \ the data? If so, why did you do this?
+
+I log-tranformed the 'EmploymentStatusDuration' distributions for each 
+employment status, which were all originally postively skewed. This enabled a
+better comparison between the different distributions for each employment status.
+
+# Bivariate Plots Section
+
+As noted above, I was interested in looking at the relationship between the 
+variable 'LoanOriginalAmount' and other variables in the dataset.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, 
+                               y=ProsperPrincipalBorrowed))+
+  geom_point(alpha=0.05)+
+  xlim(0, 40000)+
+  ylim(0, 40000)
+```
+
+The vertical dark lines at \$10000, \$15000, \$20000 and \$25000 represent the
+high occurance of loans at these rounded values, as discussed in the Univariate 
+Plots section above. The horizontal lines at \$10000, \$15000 and \$25000
+represent the same phenomenon of borrowing rounded values, but in this case, for
+previous Prosper loans. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots2}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_point(alpha=0.05)
+```
+
+Plotting the relationship between monthly loan payment and original loan amount
+results in what looks like 3 different populations of data. This may be 
+interesting to investingate further in the multivariate plot section. Within 
+each of the 3 populations, monthly loan payment and original loan amount show a 
+strong positive correlation, indicating that the larger the original loan 
+amount, the larger the monthly loan payment, somewhat expectly. Again, dark
+vertical lines at regular loan amounts (\$15000, \$20000, \$25000, etc) indicate
+that loans are commonly taken out at these values.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots3}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, 
+              y=ProsperPrincipalOutstanding))+
+  geom_jitter(alpha=0.08)
+```
+
+This is an interesting plot. The vertical dark lines at \$10000, \$15000, 
+\$20000 and \$25000 are once again visible, indicating the high occurance of 
+these loan values. There is a faint line visible where x = y, indicating a 
+slight tendency for people to take out a loan equal to the amount they are 
+currently borrowing. 
+
+There seems to be a total Prosper loan amount 'ceiling' of \$35000, as there are
+no data points for which 'LoanOriginalAmount'+'ProsperPrincipleOutstanding' >
+\$35000. A distinct line of data points is visible along this boundary, 
+indicating loans which have been taken out at this ceiling. A similar phenomenon
+seems to occur at 'LoanOriginalAmount'+'ProsperPrincipleOutstanding' = \$25000,
+maybe indicating that the ceiling for an individual borrower may be dependent 
+upon a further variable. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots4}
+ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean, y=ProsperScore))+
+  geom_jitter(alpha=0.015)+
+  xlim(600, 850)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots5}
+cor.test(LoanDataClean$CreditScoreRangeMean, LoanDataClean$ProsperScore)
+```
+
+Using the Pearson's product-moment correlation measurement is seems that there 
+is a small positive correlation between a borrower's mean credit score range and
+their Prosper score.
+
+In the univariate section of this report I looked at the distribution of the 
+employment status of the borrowers, and found that most borrowers are employed.
+I wanted to look further into this by studying the distributions in the duration 
+of each employment status.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmploymentStatusDuration}
+data=subset(LoanDataClean, EmploymentStatus != 'Not available' &
+              !is.na(EmploymentStatus))
+
+ggplot(data, aes(x=EmploymentStatusDuration))+
+  geom_histogram()+
+  facet_wrap(~EmploymentStatus, scales="free_y")+
+  scale_x_log10()
+```
+
+Comparing the data above, it seems that those working part-time and those that 
+are unemployed are more likely to take out a loan sooner after realising these
+employment statuses. 
+
+### What affects a borrower's Credit Score?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots6}
+#setting na values to 0
+cond <- is.na(LoanDataClean$TotalProsperLoans)
+LoanDataClean$TotalProsperLoans <-
+          ifelse(cond, 0, LoanDataClean$TotalProsperLoans)
+
+cond1 <- is.na(LoanDataClean$ProsperPrincipalBorrowed)
+LoanDataClean$ProsperPrincipalBorrowed <-
+          ifelse(cond1, 0, LoanDataClean$ProsperPrincipalBorrowed)
+
+cond2 <- is.na(LoanDataClean$ProsperPrincipalOutstanding)
+LoanDataClean$ProsperPrincipalOutstanding <-
+          ifelse(cond2, 0, LoanDataClean$ProsperPrincipalOutstanding)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots7}
+p1 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean,
+                                     y=AmountDelinquent))+
+  geom_jitter(alpha=0.05)+
+  xlim(600, 900)+
+  ylim(0, quantile(LoanDataClean$AmountDelinquent, 0.95, na.rm=TRUE)) 
+
+p2 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean,
+                                     y=OpenRevolvingMonthlyPayment))+
+  geom_jitter(alpha=0.01)+
+  xlim(600, 900)+
+  ylim(0,quantile(LoanDataClean$OpenRevolvingMonthlyPayment, 0.95,na.rm=TRUE))
+
+p3 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean,
+                                     y=BankcardUtilization))+
+  geom_jitter(alpha=0.01)+
+  xlim(600, 900)+
+  ylim(0, quantile(LoanDataClean$BankcardUtilization, 0.95, na.rm=TRUE))
+
+p4 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean,
+                                     y=DebtToIncomeRatio))+
+  geom_jitter(alpha=0.01)+
+  xlim(600, 900)+
+  ylim(0, quantile(LoanDataClean$DebtToIncomeRatio, 0.95, na.rm=TRUE))
+
+p5 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean,
+                                     y=TotalProsperLoans))+
+  geom_jitter(alpha=0.01)+
+  xlim(600, 900)+
+  ylim(0, quantile(LoanDataClean$TotalProsperLoans, 0.95, na.rm=TRUE))
+
+p6 <- ggplot(data=LoanDataClean, aes(x=CreditScoreRangeMean, 
+                                     y=ProsperPrincipalBorrowed))+
+  geom_jitter(alpha=0.02)+
+  xlim(600, 900)+
+  ylim(0, quantile(LoanDataClean$ProsperPrincipalBorrowed, 0.95, na.rm=TRUE))
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol=3)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots8}
+cor.test(LoanDataClean$CreditScoreRangeMean, 
+         LoanDataClean$AmountDelinquent)
+cor.test(LoanDataClean$CreditScoreRangeMean,
+         LoanDataClean$OpenRevolvingMonthlyPayment)
+cor.test(LoanDataClean$CreditScoreRangeMean, 
+         LoanDataClean$BankcardUtilization)
+cor.test(LoanDataClean$CreditScoreRangeMean, 
+         LoanDataClean$DebtToIncomeRatio)
+cor.test(LoanDataClean$CreditScoreRangeMean, 
+         LoanDataClean$TotalProsperLoans)
+cor.test(LoanDataClean$CreditScoreRangeMean, 
+         LoanDataClean$ProsperPrincipalBorrowed)
+``` 
+
+It seems that out of the variables studied in the plot above, only bankcard
+utilization correlates significantly with a borrower's credit score. The
+correlation is negative with a Pearson's r value of -0.405.
+
+### What affects a loan's Prosper Score?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots9}
+ggplot(data=LoanDataClean, aes(x=ProsperScore, y=`ProsperRating (numeric)`))+
+  geom_tile(alpha = 0.02, fill="red")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots10}
+cor.test(LoanDataClean$ProsperScore, LoanDataClean$`ProsperRating (numeric)`)
+```
+
+The Prosper score and Prosper rating variables are strongly positively 
+correlated with a Pearson's r value of 0.705. This is not surprising and it 
+could be that both variables are measuring very similar things, or outcomes of 
+similar models.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots11}
+q1 <- ggplot(data=LoanDataClean, aes(x=ProsperScore, y=LoanOriginalAmount))+
+  geom_jitter(alpha=0.02)
+
+q2 <- ggplot(data=LoanDataClean, aes(x=ProsperScore, y=Investors))+
+  geom_jitter(alpha=0.02)+
+  ylim(0, quantile(LoanDataClean$Investors, 0.95, na.rm=TRUE))
+
+q3 <- ggplot(data=LoanDataClean, aes(x=ProsperScore, y=AmountDelinquent))+
+  geom_jitter(alpha=0.1)+
+  ylim(0, quantile(LoanDataClean$AmountDelinquent, 0.95, na.rm=TRUE))
+
+q4 <- ggplot(data=LoanDataClean, aes(x=ProsperScore, y=DebtToIncomeRatio))+
+  geom_jitter(alpha=0.01)+
+  ylim(0, quantile(LoanDataClean$DebtToIncomeRatio, 0.95, na.rm=TRUE))
+
+grid.arrange(q1, q2, q3, q4, ncol=2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots12}
+cor.test(LoanDataClean$ProsperScore, LoanDataClean$LoanOriginalAmount)
+cor.test(LoanDataClean$ProsperScore, LoanDataClean$Investors)
+cor.test(LoanDataClean$ProsperScore, LoanDataClean$AmountDelinquent)
+cor.test(LoanDataClean$ProsperScore, LoanDataClean$DebtToIncomeRatio)
+```
+
+Out of the four variables explored in the plot above, the only one that has a 
+Pearson's r value indictative of a significant correlation with a Prosper score
+is the number of investors for a given loan (Pearson's r value = 0.321). 
+
+Some correlation is seen between Prosper score and original loan amount however 
+in this case any correlation may be affect rather than cause, with a higher
+Prosper score enabling larger loan amounts to be agreed.
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \ investigation. How did the feature(s) of interest vary with other features in  \ the dataset?
+
+The relationship between monthly loan payment and original loan amount seemed to
+show 3 different populations of data. Within the 3 populations, monthly loan
+payment and original loan amount show a strong positive correlation in line with
+a larger original loan amount resulting in a larger the monthly loan payment.
+
+Plots of ProsperPrincipalBorrowed vs. LoanOriginalAmount, and
+ProsperPrincipleOutstanding vs. LoanOriginalAmount both show vertical bands 
+where many original loan amounts are rounded to whole values of \$1000 or 
+\$5000.
+
+The plot of ProsperPrincipleOutstanding vs. LoanOriginalAmount was especially
+interesting, giving evidence of a total Prosper loan 'cap' or upper ceiling of
+\$35000. There is also evidence of a similar phenomenon occuring at \$25000 in
+many cases. Finally, this plot showed evidence of a slight tendency for people 
+to take out a loan equal to the amount they are currently borrowing. 
+
+There were no variables found that correlated strongly with credit score, with
+bankcard utilization giving the strongest correlation with a Pearson's r value 
+of -0.405.
+
+The Prosper score and Prosper rating variables are strongly positively 
+correlated, but are likely to be two different measures of the same thing. No
+other variable was found to correlate strongly with Prosper score, however, the
+number of investors did have a small correlation with Prosper score 
+(Pearson's r = 0.321).
+
+It seems that the models which works out a borrower's credit score and Prosper
+score are most likely quite complicated, taking into account many variables, and
+so no one variable has a big influence.
+
+### What was the strongest relationship you found?
+
+The Prosper score and Prosper rating variables are strongly positively 
+correlated, giving a Pearson's r value = 0.705. It is possible that both of 
+these variables are measures of similar things, for example they could be the
+result of similar models which both make use of the same variables.
+
+# Multivariate Plots Section
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_point(alpha=0.25, aes(color=Term))+
+  scale_color_gradientn(breaks = c(12, 36, 60), guide = "legend", 
+                        colors = colorRampPalette(c('blue', 'red'))(3))
+```
+
+It seems that loan term length determines the 3 separate populations which arise
+in the relationship between monthly loan payment and original loan amount. As
+expected, the shortest term of 12 months results in the highest monthly 
+payments, as the loan must be paid off more quickly. The scatter in the data may
+be due to borrowers having slightly different agreement terms, for example, 
+different interest rates, special discounts or special opening rates. These
+differences should be captured within the variable 'BorrowerAPR'.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots2}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_jitter(alpha=1, aes(color=BorrowerAPR))+
+  scale_color_gradientn(guide = "colorbar", 
+                        colors = colorRampPalette(c('white', 'red'))(2))
+```
+
+My inital thought looks correct and the variation within each population does 
+seem to be due to borrowers having different 'BorrowerAPR' values, with a lower
+APR value resulting in lower monthly payments.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots3}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_jitter(alpha=1, aes(color=LoanStatus))+
+  scale_colour_brewer(type = "qual", palette = 8, direction = 1)
+```
+
+It seems that most of the 12 month term loans are now completed, maybe this term
+length is no longer offered by Prosper for new loans. Most of the 36 and 60 
+month term loans are still current, however, many of the 36 month term loans at
+the highest levels of borrower APR are either completed or 'Chargedoff' and so 
+deemed unlikely to paid, maybe indicating that these are older loans. The 
+majority of the orignal loan amounts fall below \$25000 however there are a
+proportion of current loans whose original amounts fall between \$25000 and
+\$35000. This is another visualisation of the phenomenon of there being two 
+total loan amount 'ceilings' as described in the bivariate analysis section 
+above, and visualised in the plot of ProsperPrincipalOutstanding vs.
+OriginalLoanAmount. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots4}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_jitter(alpha=1, aes(color=as.numeric(CreationDate)))+
+  scale_colour_gradientn(colours=c('red','blue'))
+```
+
+This plot reaffirmed many of my suspicious about the data. It seems that all 
+loans over \$25000 are relatively recent. Those loans with the highest rates of
+borrower APR seem to be the oldest loans. Contrary to my thoughts that Prosper 
+may no longer offer 12 month loans, it seems that many of these loans are
+relatively recent. Maybe it is just the fact that these 12 month loans get paid
+off more quickly that accounts for why a high proportion of them are shown as
+'completed' in the previous plot.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots5} 
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount,
+                               y=ProsperPrincipalOutstanding))+
+  geom_jitter(alpha=0.5, aes(color=as.numeric(CreationDate)))+
+  scale_colour_gradientn(colours=c('red','blue'))
+```
+
+In line with the previous plot, it seems that having a total Prosper loan amount
+between \$25000 and \$35000 only occurs for the most recent loans. Maybe this
+reflects a recent change in Prosper policy.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots6} 
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount,
+                               y=ProsperPrincipalOutstanding))+
+  geom_jitter(alpha=0.5, aes(color=`ProsperRating (numeric)`))+
+  scale_color_gradientn(limits = c(1, 7), 
+                        breaks = c(1, 2, 3, 4, 5, 6, 7), 
+                        guide = "legend",
+                        colors = colorRampPalette(c('red', 'white'))(7))
+```
+
+Taking out a further loan which pushes a borrowers total Prosper loan amount 
+over \$25000 seems to be available only for loans with a high Prosper rating,
+indicating a lower risk loan. 
+
+# Multivariate Analysis
+
+###Talk about some of the relationships you observed in this part of the \ investigation. Were there features that strengthened each other in terms of \ looking at your feature(s) of interest?
+
+This investigation sheds light on some policy changes that Prosper made over the
+time that this data was collected, such as an increase in total allowed Prosper
+loan amount from \$25000 to \$35000 for those loans with high Prosper ratings.
+This policy change accounted for some unusual features that had been seen in
+previous graphs.
+
+The variables Borrower APR rate and loan term length were used to explain the 3
+populations of data previously seen in the plot of MonthlyLoanPayment vs.
+LoanOriginalAmount first explored in the bivariate plots section. More Prosper
+policy changes were made apparent, such as the decrease in the borrower APR 
+value.
+
+### Were there any interesting or surprising interactions between features?
+
+The relationship between loan creation date and total Prosper loan value was
+unexpected, as I initially did not consider that Prosper policy changes could be
+unearthed by exploring this dataset. This relationship took my data exploration
+down a path I did not expect!
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths \ and limitations of your model.
+
+I did not create any models with my dataset.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
+data=subset(LoanDataClean, EmploymentStatus != 'Not available' &
+              !is.na(EmploymentStatus))
+
+ggplot(data, aes(x=(EmploymentStatusDuration/12)))+
+  geom_histogram(binwidth=0.05, color="black", fill="blue")+
+  facet_wrap(~EmploymentStatus, scales="free_y")+
+  scale_x_log10(breaks=c(1, 2, 5, 10, 20, 40))+
+  ggtitle("Duration of Employment Status Before Taking Out Loan")+
+  theme(plot.title=element_text(hjust=0.5))+
+  xlab("Employment Status Duration (years)")+
+  ylab("Count")
+```
+
+### Description One
+The distribution of employment status duration at the time the listing was 
+created has a slight negative skew on a log scale for all employment status 
+types except the 'not employed' and 'part-time' types. The 'part-time' type 
+shows a more normal distribution and the 'retired' type shows a gradual decrease
+in the number of listings created as the duration of the retirement increases. 
+For both of these status types however, a relatively high number of listings are
+made within the first year of the status duration. In general, for these two
+employment status types, a listing is made earlier in the employment status
+duration than for the other employment status types.
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, 
+                               y=ProsperPrincipalBorrowed))+
+  geom_jitter(alpha=0.05, fill="red", color="red")+
+  xlim(0, quantile(LoanDataClean$LoanOriginalAmount, 0.995, na.rm=TRUE))+
+  ylim(0, quantile(LoanDataClean$ProsperPrincipalBorrowed, 0.995, na.rm=TRUE))+
+  ggtitle("Prosper Principle Borrowed at Time of Listing \
+vs. Original Loan Amount")+
+  theme(plot.title=element_text(hjust=0.5))+
+  xlab("Original Loan Amount ($)")+
+  ylab("Prosper Principle Borrowed ($)")
+```
+
+### Description Two
+This plot highlights the general trend that loans are often taken out at rounded
+values (rounded to the nearest \$1000 for loans below \$10000, and to the 
+nearest \$5000 for loans over \$10000) as shown by the darker vertical and
+horizontal lines at \$10000, \$15000, \$20000 and \$25000. It also shows that 
+the majority of original loan amounts are below \$25000.
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+ggplot(data=LoanDataClean, aes(x=LoanOriginalAmount, y=MonthlyLoanPayment))+
+  geom_point(aes(color=BorrowerAPR))+
+  geom_smooth(data=subset(LoanDataClean, Term==12),
+              aes(x=LoanOriginalAmount, y=MonthlyLoanPayment), 
+              colour="#3333ff", alpha=0.5, linetype = 2, se=FALSE, method="lm")+
+  geom_smooth(data=subset(LoanDataClean, Term==36), 
+              aes(x=LoanOriginalAmount, y=MonthlyLoanPayment), 
+              color="#0000cc", alpha=0.5, linetype = 2, se=FALSE, method="lm")+
+  geom_smooth(data=subset(LoanDataClean, Term==60), 
+              aes(x=LoanOriginalAmount, y=MonthlyLoanPayment), 
+              color="#000066", alpha=0.5, linetype = 2, se=FALSE, method="lm")+
+  scale_color_gradientn(guide = "colorbar", 
+                        colors = colorRampPalette(c('white', 'red'))(3))+
+  ggtitle("Monthly Loan Payment vs. Original Loan Amount")+
+  xlab("Original Loan Amount ($)")+
+  ylab("Monthly Loan Payment ($)")+
+  annotate("text", x = c(27500,33000,33000), y = c(2000,1300,900), 
+           label = c("12 months", "36 months", "60 months"),
+           color=c("#3333ff","#0000cc","#000066"))+
+  theme(plot.title=element_text(hjust=0.5),
+        panel.background = element_rect(fill = "#bcbcc2", colour = "#bcbcc2",
+                                size = 0.5, linetype = "solid"),
+        panel.border = element_blank(),
+        panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "#d1d1e0"), 
+        panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "#d1d1e0"),
+        axis.line = element_line(size = 0.5, linetype = "solid",
+                                colour = "#3d3d43"))
+```
+
+### Description Three
+This plot of MonthlyLoanPayment vs. LoanOriginalAmount shows the linear fit
+applied to data with a term length equal to 12, 36 and 60 months, highlighting 
+the 3 different populations of data which result from these term lengths. The 
+data points are also shaded depending upon the value of the variable
+'BorrowerAPR', indicating the 'noise' that this variable creates in the data for
+each population.
+
+------
+
+# Reflection
+
+This dataset, provided by Prosper, contains information on 113,937 loans, with
+details of 81 variables on each loan. The large number of variables meant that I
+had to be quite selective with what I wanted to investigate. I started by
+looking at over 20 variables in the univariate part of this report that I 
+thought could be particularly interesting, such as loan status, Prosper rating,
+Prosper score, original loan amount, employment status and employment status
+duration, enabling me to build up a picture of the dataset.
+
+In the bivariate analysis part of this report I started to explore relationships
+between the variables, looking at the relationship between a borrower's previous
+loan history and the size of a new loan that a borrower took out. I also
+explored the relationship between a number of variables and a borrower's credit
+score as well as a loan's Prosper score. Suprisingly to me, I found that in both
+of these cases no one variable had a great correlation with either credit score 
+or Prosper rating, even variables such as 'AmountDelinquent' and
+'DebtToIncomeRatio' which I assumed would have a large affect. I concluded that
+the models used to calculate these scores and ratings are complicated, likely 
+with multiple variables that together determine the outcome. 
+
+Eventually I considered further the unusual shaped plots that I had uncovered
+when looking at the relationship between monthly loan payment vs. original loan
+amount and Prosper principle outstanding vs. original loan amount. In my
+multivariate analysis I used the variables loan term length, borrower APR, loan
+status, listing creation date and Prosper rating to make sense of these plots 
+and fully explain their structure. In doing so I uncovered policy changes that
+Prosper had implemented over the time this dataset was collected. These changes
+include an increase in the total allowed Prosper loan amount from \$25000 to 
+\$35000 for those borrowers with high Prosper ratings as well as changes to the 
+rate of borrower APR. 
+
+There is a huge amount of scope to develop this analysis further as many 
+variables have not been explored at all. It would be interesting to look at 
+these variables and see if they, plus the variables explored in this report, 
+could be used to form a model able to predict credit score or Prosper rating. 
+The variables related to the number of credit lines a borrower has, or their
+number of public records, as well as their payment history, may be particularly 
+interesting to look at.
